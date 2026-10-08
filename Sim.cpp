@@ -58,7 +58,7 @@ std::string TimeCodeVerboseString(TimeCode tc){
 
 
 // Function to generate the HTML file with embedded Plotly.js chart
-void generateHTMLoutput(results data, const std::string& filename = "plot.html") {
+void generateHTMLoutput(results& data, const std::string& filename = "plot.html") {
 
     std::ofstream html_file(filename);
 
@@ -167,8 +167,10 @@ void generateHTMLoutput(results data, const std::string& filename = "plot.html")
 }
 
 
-
-void generateTerminalOutput(results data) {
+//changed the results to be a passed by refrence and did the same for the generate HTMLoutput function instead of results being a value.
+// Passing by value made a copy of the results every time this function was called. With & the function
+// uses the original, so nothing is copied.
+void generateTerminalOutput(results& data) {
 	std::cout << "\tduration: " << TimeCodeVerboseString(data.total_duration)
 		<< "\n\troad capacity: " << data.road_capacity
 		<< "\n\tavg new cars / second: " << data.new_car_rate
@@ -252,7 +254,8 @@ int main(int argc, char* argv[]) {
 		int progress = percentage(t.GetTimeCodeAsSeconds(), dur.GetTimeCodeAsSeconds());
 		std::cout << "\r" << progress << "%" << std::flush;
 
-		ALL();
+		//ALL();
+		//i do not think i need all as all runs all the timecode tests and its on the for loop here so i dont need to run the tests every second also it does not change anything on this code (it doesnt change number of cars etc)
 
 		// --- New Cars Show Up (maybe) ---
 		int num_new_cars = poisson(new_car_rate);
@@ -276,9 +279,12 @@ int main(int argc, char* argv[]) {
 		crash_timer--;
 
 		// check for a crash once / day
-		double prob_of_crash_today = crash_prob_map.at(day_of_week_name(day_of_week_code(t)));
+		
 		//std::cout << "prob of crash today: " << prob_of_crash_today << std::endl;
 		if(t.GetTimeCodeAsSeconds() % DURATION_1DAY == 0){
+			//what i changed: I moved the line that looks up today's crash probability inside the if statement that is for only once a day. It used to be above the if, so the program
+			// worked out the day of the week, the day name and searched the map every second, even though the probability is only used once per day
+			double prob_of_crash_today = crash_prob_map.at(day_of_week_name(day_of_week_code(t)));
 			bool crash = crash_occurs(prob_of_crash_today);
 			if(crash){
 				///std::cout << "CRASH! No cars exit for a while now" << std::endl;
@@ -305,17 +311,28 @@ int main(int argc, char* argv[]) {
 	// Find the times at which certain amount of cars are present
 	std::cout << "Computing sample statistics..." << std::endl;
 	std::unordered_map<int, std::vector<TimeCode>> count_times;
+	//added this as it means that nothing gets printed yet 
+	int last_progress = -1; //holds teh last precentage printed on the screen its one of teh things i changed to make sure precentages do not get printed again and again 
 	for(size_t i = 0; i < data.size(); i++){
+		//what i changed: this percentage only changes 100 times but it runs every second and thats a lot of looping and apparently flush is very slow as it puts teh number on the string at that specific moment so when we get two numbers who are teh samae like 1% it keeps printing 1%
+		
 		int progress = percentage(i, data.size());
-		std::cout << "\r" << progress << "%" << std::flush;
-		data_point_pair cur = data[i];
-		if(count_times.find(cur.num_cars) != count_times.end()){
-			std::vector<TimeCode> times_list = count_times[cur.num_cars];
-			times_list.push_back(cur.t);
-			count_times[cur.num_cars] = times_list;
-		} else {
-			count_times[cur.num_cars] = std::vector<TimeCode>{cur.t};
+		if(progress != last_progress){                  //print only if its a new number we dont want 1% to be printed all the time
+			std::cout << "\r" << progress << "%" << std::flush;   
+			last_progress = progress;                   //remember the number
 		}
+		
+		data_point_pair cur = data[i];
+		//if(count_times.find(cur.num_cars) != count_times.end()){
+			//std::vector<TimeCode> times_list = count_times[cur.num_cars];
+			//times_list.push_back(cur.t);
+			//count_times[cur.num_cars] = times_list;
+		//} else {
+			//count_times[cur.num_cars] = std::vector<TimeCode>{cur.t};
+		//}
+		//instead of copying every single list from the map and add one item adn copy again, I instead add the item directly in the list in the map 
+		//find is not needed as the line creates a vector if one is not existing 
+		count_times[cur.num_cars].push_back(cur.t);
 	}
 	std::cout << "\n---Simulation Finished---" << std::endl;
 
@@ -340,7 +357,8 @@ int main(int argc, char* argv[]) {
 	res.x_data = x_data;
 	res.y_data = y_data;
 	res.plotted_duration = TimeCode(0, 0, DURATION_10MIN);
-	res.plotted_duration.WasteTimeAndBeSlow();
+	//res.plotted_duration.WasteTimeAndBeSlow();
+	//i do not need this as it only changes teh local variable num but that variable is never used so its literally just wasting time. 
 
 
 	generateTerminalOutput(res);

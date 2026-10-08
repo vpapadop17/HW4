@@ -36,13 +36,22 @@ double power(double a, int b){
 		b = -b;
 	}
 	
-	double ans = power_recursive(a, b);
+	//double ans = power_recursive(a, b);
 
-	if(needs_inversion){
-		ans = 1.0 / ans;
-	}
+	//if(needs_inversion){
+		//ans = 1.0 / ans;
+	//}
 
-	return ans;
+	//removed the recursion because it calls the function multiple times and makes the program slow 
+	//multiply a by itself b times so the power is done liek this and works a bit faster not a lot though 
+	double ans = 1.0;
+    for(int i = 0; i < b; i++){
+        ans = ans * a;  
+    }
+
+    if(needs_inversion) ans = 1.0 / ans;
+    return ans;
+
 }
 
 
@@ -162,78 +171,46 @@ std::unordered_map<std::string, double> build_crash_prob_map(){
 	// The value is the probability of a crash on that day.  Based on data from the database
 	// the probability of a crash on e.g., Tuesday is  (num crashes on tuesdays) / (total num crashes)
 
-
-
-			sqlite3* db;
-int rc = sqlite3_open("CRASH_LANCASTER_2024.db", &db); // note c_str() converts to a const char* which is the string type in C
+	sqlite3* db;
+	int rc = sqlite3_open("CRASH_LANCASTER_2024.db", &db);
 	if(rc){
 		throw std::invalid_argument("Could not open CRASH_LANCASTER_2024.db database file!");
 	}
 
-
 	// Step 1. Count all stuff (row things?) from DB
-	const char* first_sql_query = "SELECT COUNT(*) FROM incidents";  double total_crashes = 0.0;
-	sqlite3_stmt* stmt;
+	const char* first_sql_query = "SELECT COUNT(*) FROM incidents;";  
+	double total_crashes = 0.0;
+	sqlite3_stmt* stmt = nullptr;
 	rc = prepare(db, first_sql_query, &stmt);
 	if(rc == SQLITE_OK){
-
-			rc = sqlite3_step(stmt);
-
-				if(rc == SQLITE_ROW){
-
-					total_crashes = static_cast<double>(sqlite3_column_int(stmt, 0));
-					//std::cout << "total_crashes: " << total_crashes << std::endl;
-}
-}
-
-
-
-	// Step 3. Get al accidonts when there's once car involved
-	const char* second_sql_query = "SELECT CRN FROM incidents WHERE AUTOMOBILE_COUNT != 0;";
-	rc = prepare(db, second_sql_query, &stmt);
-
-	std::vector<int> CRNs; // Crash Record Number, like an ID for each crash
-			while((rc = sqlite3_step(stmt)) == SQLITE_ROW){const int crn = sqlite3_column_int(stmt, 0); 
-				CRNs.push_back(crn);
-				//cout << "CRn   : " << crn << endl;
-			}
-
-	if(rc != SQLITE_DONE)
-	{
-		std::cout << "Error: " << sqlite3_errmsg(db) << std::endl;
-		throw std::runtime_error("Error iterating over DB query results.");
+		rc = sqlite3_step(stmt);
+		if(rc == SQLITE_ROW){
+			total_crashes = static_cast<double>(sqlite3_column_int(stmt, 0));
+			//std::cout << "total_crashes: " << total_crashes << std::endl;
+		}
 	}
+	sqlite3_finalize(stmt);
 
-
-
-	// Step 3. Count all adscrashes on each dOW to build the map
+	// Step 2 & 3: Count crashes per day of week in ONE query
 	std::unordered_map<std::string, double> crash_prob_map;
 	
-	for(int dow = 1; dow < 8; dow++){ // iterate over each day
-	int count = 0;
-	for(size_t i = 0; i < CRNs.size(); i++){ // count the number of crashes from the result that are dow
-				const char* third_sql_query = "SELECT * FROM incidents WHERE CRN = ? AND DAY_OF_WEEK = ?;";
-			rc = prepare(db, third_sql_query, &stmt);
+	//the original looped over every day of the week and inside that over every crash and did a separate query for each one which were a lot of queries.
+	//GROUP BY counts the crashes for each day, so the work is done in a single query instead of thousands.
+	//Count gives the size of the piles (each of them)
 
-// https://sqlite.org/c3ref/bind_blob.html
-sqlite3_bind_int64(stmt, 1, CRNs.at(i)); // "bind", put CRN into query for first question mark
-sqlite3_bind_int(stmt, 2, dow); // "bind", put day of week code into query for second question mark
-			
-			while((rc = sqlite3_step(stmt)) == SQLITE_ROW){
-			//const int injury_count = sqlite3_column_int(stmt, 36);
-			//std::cout << "CRN: " << CRNs.at(i) << "  injury count: "  << injury_count << std::endl;
-			count++;}
+	const char* group_sql_query = "SELECT DAY_OF_WEEK, COUNT(*) FROM incidents WHERE AUTOMOBILE_COUNT != 0 GROUP BY DAY_OF_WEEK;";
+	rc = prepare(db, group_sql_query, &stmt);
 
-			// For the database it's 1-7 for Sunday - Saturday, but for the function it's 0-6
+	//this loops through every day 
+	while((rc = sqlite3_step(stmt)) == SQLITE_ROW){
+		int dow = sqlite3_column_int(stmt, 0);       // Column 0: DAY_OF_WEEK (1 to 7)
+		int count = sqlite3_column_int(stmt, 1);     // Column 1: total crashes for that day
+
+		//indexed as 0-6 (the days) 
+		if(dow >= 1 && dow <= 7 && total_crashes > 0){
+			crash_prob_map[day_of_week_name(dow - 1)] = static_cast<double>(count) / total_crashes;
 		}
-		//std::cout << "Day: " << day_of_week_name(dow-1) << " count : " << count << std::endl;
-	crash_prob_map[day_of_week_name(dow-1)] += static_cast<double>(count) / total_crashes; // add the probability of crash on this day
+	}
+
+	return crash_prob_map;
 }
-
-sqlite3_finalize(stmt);
-sqlite3_close(db);
-
-return crash_prob_map;
-}
-
-
